@@ -1,0 +1,174 @@
+﻿@page "/gestor"
+@rendermode InteractiveServer
+@using GestorContraseñas.Components.Models
+@using GestorContraseñas.Components.Services
+@inject IPasswordService PasswordService
+
+<PageTitle>Gestor de Contraseñas</PageTitle>
+
+<div class="container mt-4">
+    <h2><i class="bi bi-shield-lock"></i> Ejercicio 23: Gestor de Contraseñas</h2>
+    <hr />
+
+    <div class="row">
+        <div class="col-md-5">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">Nueva Credencial</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Servicio</label>
+                        <input @bind="nuevaCredencial.Servicio" class="form-control" placeholder="Ej: Netflix, GitHub..." />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Usuario</label>
+                        <input @bind="nuevaCredencial.Usuario" class="form-control" placeholder="Correo o Nickname" />
+                    </div>
+                    
+                    <div class="card bg-light p-3 mb-3">
+                        <h6>Generador Seguro</h6>
+                        <div class="row g-2 align-items-center">
+                            <div class="col-6">
+                                <input type="number" @bind="configLongitud" class="form-control" min="8" max="32" />
+                            </div>
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input type="checkbox" @bind="configSimbolos" class="form-check-input" id="checkSimbolos" />
+                                    <label class="form-check-label" for="checkSimbolos">Símbolos</label>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-outline-secondary btn-sm mt-2" @onclick="GenerarNueva">
+                            <i class="bi bi-arrow-clockwise"></i> Generar Sugerencia
+                        </button>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Contraseña</label>
+                        <input @bind="nuevaCredencial.Password" class="form-control" @oninput="ActualizarFortalezaEnVivo" />
+                        <div class="progress mt-1" style="height: 5px;">
+                            <div class="progress-bar" style="width: @(GetProgresoFortaleza())%; background-color: @nuevaCredencial.ColorFortaleza"></div>
+                        </div>
+                        <small class="text-muted">Fortaleza: @nuevaCredencial.Fortaleza</small>
+                    </div>
+
+                    <button class="btn btn-success w-100" @onclick="Guardar">
+                        <i class="bi bi-save"></i> Guardar Credencial
+                    </button>
+                    
+                    @if (!string.IsNullOrEmpty(mensajeError))
+                    {
+                        <div class="alert alert-danger mt-2 small">@mensajeError</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-7">
+            <div class="input-group mb-3">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" @bind="terminoBusqueda" @bind:event="oninput" @onkeyup="Filtrar" class="form-control" placeholder="Buscar servicio..." />
+            </div>
+
+            <table class="table table-hover border">
+                <thead class="table-light">
+                    <tr>
+                        <th>Servicio</th>
+                        <th>Usuario</th>
+                        <th>Fortaleza</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var cred in credencialesFiltradas)
+                    {
+                        <tr>
+                            <td><strong>@cred.Servicio</strong></td>
+                            <td>@cred.Usuario</td>
+                            <td><span class="badge" style="background-color:@cred.ColorFortaleza">@cred.Fortaleza</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => Eliminar(cred.Id)">Borrar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    private Credencial nuevaCredencial = new();
+    private List<Credencial> credencialesFiltradas = new();
+    private int configLongitud = 12;
+    private bool configSimbolos = true;
+    private string terminoBusqueda = "";
+    private string mensajeError = "";
+
+    protected override void OnInitialized()
+    {
+        ActualizarLista();
+    }
+
+    private void GenerarNueva()
+    {
+        nuevaCredencial.Password = PasswordService.GenerarPassword(configLongitud, configSimbolos);
+        ActualizarFortalezaEnVivo(new ChangeEventArgs { Value = nuevaCredencial.Password });
+    }
+
+    private void ActualizarFortalezaEnVivo(ChangeEventArgs e)
+    {
+        var pass = e.Value?.ToString() ?? "";
+        nuevaCredencial.Password = pass;
+        nuevaCredencial.Fortaleza = PasswordService.EvaluarFortaleza(pass);
+    }
+
+    private void Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(nuevaCredencial.Servicio) || string.IsNullOrWhiteSpace(nuevaCredencial.Password))
+        {
+            mensajeError = "Servicio y Contraseña son obligatorios.";
+            return;
+        }
+
+        if (PasswordService.VerificarPasswordsRepetidos(nuevaCredencial.Password))
+        {
+            mensajeError = "¡Cuidado! Esta contraseña ya ha sido usada en otro servicio.";
+        }
+
+        PasswordService.AgregarCredencial(nuevaCredencial);
+        nuevaCredencial = new(); // Reset
+        mensajeError = "";
+        ActualizarLista();
+    }
+
+    private void Filtrar()
+    {
+        if (string.IsNullOrWhiteSpace(terminoBusqueda))
+        {
+            ActualizarLista();
+        }
+        else
+        {
+            var resultado = PasswordService.BuscarPorServicio(terminoBusqueda);
+            credencialesFiltradas = resultado != null ? new List<Credencial> { resultado } : new();
+        }
+    }
+
+    private void ActualizarLista() => credencialesFiltradas = PasswordService.ObtenerTodas();
+
+    private void Eliminar(Guid id)
+    {
+        // Implementación rápida para la UI
+        PasswordService.ObtenerTodas().RemoveAll(c => c.Id == id);
+        ActualizarLista();
+    }
+
+    private int GetProgresoFortaleza() => nuevaCredencial.Fortaleza switch
+    {
+        NivelFortaleza.MuyFuerte => 100,
+        NivelFortaleza.Fuerte => 75,
+        NivelFortaleza.Media => 50,
+        NivelFortaleza.Debil => 25,
+        _ => 10
+    };
+}
